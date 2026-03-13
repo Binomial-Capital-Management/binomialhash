@@ -49,7 +49,7 @@ agg  = bh.aggregate("market_data_abc123", "price", "mean")
 
 ## Provider Adapters
 
-BinomialHash ships with 25 provider-neutral tool definitions that expose its full API (retrieve, aggregate, query, group, regress, manifold navigation, etc.) to any LLM. Adapters translate these into provider-specific formats.
+BinomialHash ships with 68 provider-neutral tool definitions that expose its full API (retrieve, aggregate, query, group, statistical analysis, causal inference, manifold navigation, spatial reasoning, export, etc.) to any LLM. Adapters translate these into provider-specific formats.
 
 ### OpenAI
 
@@ -172,16 +172,25 @@ stats = bh.context_stats()
 binomialhash/
   core.py              # BinomialHash class — ingest, retrieve, aggregate, query
   schema.py            # Schema inference and column typing
-  stats.py             # Statistical functions (regression, PCA, correlations)
   extract.py           # Row extraction from nested JSON
   predicates.py        # Predicate building and row filtering
   context.py           # Request-scoped contextvar helpers
   insights.py          # Objective-driven insight extraction
   middleware.py         # Auto-interception decorator and raw-mode bypass
-  manifold/            # Manifold surface construction and navigation
-  tools/               # 25 provider-neutral ToolSpec definitions
+  stats/               # 39 statistical tools across 7 stages
+    regression.py      #   OLS, partial correlation, PCA
+    quality.py         #   Outlier detection, missing data, distribution tests
+    dependency.py      #   Correlation matrices, mutual information, Granger
+    drivers.py         #   Feature importance, SHAP-style, interaction screening
+    structure.py       #   Clustering, segmentation, latent structure
+    causal.py          #   ATE estimation, synthetic control, counterfactuals
+    dynamics.py        #   Trend decomposition, change-point, recurrence
+    laws.py            #   Benford, Zipf, power-law diagnostics
+  manifold/            # Manifold surface construction and navigation (14 tools)
+    spatial.py         #   6 spatial reasoning tools (HKS, diffusion, Reeb, etc.)
+  tools/               # 68 provider-neutral ToolSpec definitions
   adapters/            # OpenAI, Anthropic, Gemini, xAI schema translators
-  exporters/           # Excel batch export, embedding chunks
+  exporters/           # Markdown, CSV, Excel, chunked artifacts
   tokenizers/          # Provider-aware token counting
 ```
 
