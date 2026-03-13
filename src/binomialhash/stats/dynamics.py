@@ -6,7 +6,11 @@ import json
 import math
 from typing import Any, Dict, List, Optional
 
-from scipy.spatial.distance import pdist, squareform
+try:
+    from scipy.spatial.distance import pdist, squareform
+except ImportError:
+    pdist = None
+    squareform = None
 
 from ._helpers import (
     DEFAULT_STATS_POLICY,
@@ -424,8 +428,8 @@ def recurrence_analysis_dataset(
     policy: StatsPolicy = DEFAULT_STATS_POLICY,
 ) -> Dict[str, Any]:
     """Recurrence Quantification Analysis."""
-    if np is None:
-        return {"error": "numpy required for recurrence analysis."}
+    if np is None or pdist is None:
+        return {"error": "numpy and scipy required for recurrence analysis."}
     try:
         fields = json.loads(fields_json) if fields_json else []
     except (json.JSONDecodeError, TypeError):

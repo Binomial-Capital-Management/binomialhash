@@ -32,14 +32,17 @@ xai = ["tiktoken>=0.7"]
 anthropic = []
 gemini = []
 excel = ["openpyxl>=3.1"]
+scipy = ["scipy>=1.11"]
 all = [
     "tiktoken>=0.7",
     "openpyxl>=3.1",
+    "scipy>=1.11",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "tiktoken>=0.7",
+    "scipy>=1.11",
 ]
 
 [project.urls]
