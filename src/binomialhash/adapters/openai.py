@@ -37,12 +37,27 @@ from ..tools.base import ToolSpec
 from .common import handle_tool_call, parse_arguments
 
 
+def _apply_strict_mode(params: Dict[str, Any]) -> None:
+    """Enforce OpenAI Structured Outputs constraints in-place.
+
+    OpenAI's Structured Outputs spec requires that when ``strict: true``:
+    - ``additionalProperties`` must be ``false``
+    - **All** properties must appear in ``required`` (optional params
+      should use ``"type": ["string", "null"]`` with a default instead)
+
+    See: https://platform.openai.com/docs/guides/structured-outputs
+    """
+    params.setdefault("additionalProperties", False)
+    props = params.get("properties", {})
+    params["required"] = list(props.keys())
+
+
 def _spec_to_responses(spec: ToolSpec, *, strict: bool = False) -> Dict[str, Any]:
     """Convert one ToolSpec into an OpenAI **Responses API** tool dict."""
     params = copy.deepcopy(spec.input_schema)
 
     if strict:
-        params.setdefault("additionalProperties", False)
+        _apply_strict_mode(params)
 
     tool: Dict[str, Any] = {
         "type": "function",
@@ -60,7 +75,7 @@ def _spec_to_chat_completions(spec: ToolSpec, *, strict: bool = False) -> Dict[s
     params = copy.deepcopy(spec.input_schema)
 
     if strict:
-        params.setdefault("additionalProperties", False)
+        _apply_strict_mode(params)
 
     fn: Dict[str, Any] = {
         "name": spec.name,
