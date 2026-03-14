@@ -8,6 +8,7 @@ from .structures import GridPoint, ManifoldAxis
 
 def classify_product_topology(axes: List[ManifoldAxis]) -> Tuple[str, int, bool, int]:
     """Classify surface from the product of per-axis boundary types."""
+    # I=interval (bounded), C=circle (wraps preserving), X=cross-cap (wraps reversing).
     types = []
     for axis in axes:
         if axis.wraps and axis.wrap_orientation == -1:
@@ -153,6 +154,7 @@ def compute_face_topology_2d(
 
     edge_count_faces = len(edge_face_incidence)
     vertex_count_faces = len(face_vertices)
+    # Euler characteristic: χ = V - E + F.
     chi_face = vertex_count_faces - edge_count_faces + face_count
 
     boundary_edges = [edge for edge, count in edge_face_incidence.items() if count == 1]
@@ -162,12 +164,14 @@ def compute_face_topology_2d(
     nonmanifold_edges = sum(1 for count in edge_face_incidence.values() if count > 2)
     is_manifold = nonmanifold_edges == 0
 
+    # Classification theorem: χ = 2 - 2g (orientable) or χ = 2 - k (non-orientable).
     boundary_components = boundary_loops if boundary_edge_count > 0 else 0
     genus_est_orientable = (2 - boundary_components - chi_face) / 2
     crosscap_est_nonorientable = 2 - boundary_components - chi_face
 
     face_coverage = face_count / max(possible_faces, 1)
     occupancy = len(grid) / max(m * n, 1)
+    # Weighted blend of face coverage and occupancy; halved for non-manifold complexes.
     confidence = max(0.0, min(1.0, 0.55 * face_coverage + 0.45 * occupancy))
     if not is_manifold:
         confidence *= 0.5

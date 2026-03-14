@@ -23,6 +23,7 @@ def _export_csv_handler(bh: "BinomialHash", key: str, columns: Optional[str] = N
     if slot is None:
         return {"error": f"Key '{key}' not found."}
     from ..exporters.csv import export_csv
+    capped = min(max_rows, bh._policy.export_csv_max_rows)
     return {
         "type": "artifact",
         "filename": f"{slot.label}.csv",
@@ -30,7 +31,7 @@ def _export_csv_handler(bh: "BinomialHash", key: str, columns: Optional[str] = N
         "content": export_csv(
             slot.rows, slot.columns, slot.col_types,
             select_columns=_parse_columns(columns),
-            sort_by=sort_by, sort_desc=sort_desc, max_rows=max_rows,
+            sort_by=sort_by, sort_desc=sort_desc, max_rows=capped,
         ),
         "format": "csv",
     }
@@ -43,10 +44,11 @@ def _export_markdown_handler(bh: "BinomialHash", key: str, columns: Optional[str
     if slot is None:
         return {"error": f"Key '{key}' not found."}
     from ..exporters.markdown import export_markdown
+    capped = min(max_rows, bh._policy.export_markdown_max_rows)
     return export_markdown(
         slot.rows, slot.columns, slot.col_types,
         select_columns=_parse_columns(columns),
-        sort_by=sort_by, sort_desc=sort_desc, max_rows=max_rows,
+        sort_by=sort_by, sort_desc=sort_desc, max_rows=capped,
         total_rows=slot.row_count, label=slot.label,
     )
 
@@ -57,12 +59,20 @@ def _export_artifact_handler(bh: "BinomialHash", key: str, format: str = "csv",
     slot = bh._get_slot(key)
     if slot is None:
         return {"error": f"Key '{key}' not found."}
+    # Pick the right policy cap based on the requested format
+    cap_map = {
+        "csv": bh._policy.export_csv_max_rows,
+        "markdown": bh._policy.export_markdown_max_rows,
+        "json": bh._policy.export_rows_max_rows,
+        "jsonl": bh._policy.export_rows_max_rows,
+    }
+    capped = min(max_rows, cap_map.get(format, bh._policy.export_csv_max_rows))
     from ..exporters.artifact import build_artifact
     return build_artifact(
         slot.rows, slot.columns, slot.col_types,
         format=format, label=slot.label,
         select_columns=_parse_columns(columns),
-        sort_by=sort_by, sort_desc=sort_desc, max_rows=max_rows,
+        sort_by=sort_by, sort_desc=sort_desc, max_rows=capped,
         total_rows=slot.row_count,
     )
 
@@ -83,7 +93,7 @@ def _make_export_specs(bh: "BinomialHash") -> List[ToolSpec]:
                     "columns": _prop("string", "Column names as JSON array string (omit for all)."),
                     "sort_by": _prop("string", "Column to sort by."),
                     "sort_desc": _prop("boolean", "Sort descending.", default=True),
-                    "max_rows": _prop("integer", "Maximum rows (default 500, max 5000).", default=500),
+                    "max_rows": _prop("integer", "Maximum rows to export (default 500, capped by policy).", default=500),
                 },
                 "required": ["key"],
             },
@@ -106,7 +116,7 @@ def _make_export_specs(bh: "BinomialHash") -> List[ToolSpec]:
                     "columns": _prop("string", "Column names as JSON array string (omit for all)."),
                     "sort_by": _prop("string", "Column to sort by."),
                     "sort_desc": _prop("boolean", "Sort descending.", default=True),
-                    "max_rows": _prop("integer", "Maximum rows to display (default 50, max 200).", default=50),
+                    "max_rows": _prop("integer", "Maximum rows to display (default 50, capped by policy).", default=50),
                 },
                 "required": ["key"],
             },
@@ -136,7 +146,7 @@ def _make_export_specs(bh: "BinomialHash") -> List[ToolSpec]:
                     "columns": _prop("string", "Column names as JSON array string (omit for all)."),
                     "sort_by": _prop("string", "Column to sort by."),
                     "sort_desc": _prop("boolean", "Sort descending.", default=True),
-                    "max_rows": _prop("integer", "Maximum rows (default 500, max 5000).", default=500),
+                    "max_rows": _prop("integer", "Maximum rows to export (default 500, capped by policy).", default=500),
                 },
                 "required": ["key"],
             },

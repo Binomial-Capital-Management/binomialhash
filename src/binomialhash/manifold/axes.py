@@ -41,6 +41,7 @@ def identify_axes(
         unique_counts[col] = len(vals)
         value_counts[col] = freq
 
+    # High entropy = values distributed uniformly; good axis candidate.
     def _entropy_norm(freq: Dict[str, int]) -> float:
         total = sum(freq.values())
         if total <= 0 or len(freq) <= 1:
@@ -70,6 +71,7 @@ def identify_axes(
     selected_axes: List[str] = []
     for col in seed_axes:
         u = unique_counts[col]
+        # sqrt(n)*6 bounds cardinality to avoid combinatorial explosion in grid size.
         if 2 <= u <= max(2, int(math.sqrt(n) * 6)):
             selected_axes.append(col)
 
@@ -94,6 +96,7 @@ def identify_axes(
         expected = max(base_prod * u, 1)
         coverage = distinct_tuples / expected
 
+        # Favors coverage, high repeat rates, uniform distribution, moderate cardinality.
         score = coverage * math.log1p(repeats) * (0.5 + 0.5 * ent) * math.log1p(u)
         if score > best_score:
             best_score = score
@@ -102,6 +105,7 @@ def identify_axes(
     if best_num_axis is not None:
         test_prod = base_prod * max(unique_counts.get(best_num_axis, 1), 1)
         test_occupancy = n / max(test_prod, 1)
+        # 30% minimum occupancy prevents sparse grids.
         if test_occupancy >= 0.3:
             selected_axes.append(best_num_axis)
 
@@ -135,6 +139,7 @@ def identify_axes(
     selected_axis_set = {a.column for a in axes}
     fields = [c for c in columns if col_types.get(c) == "numeric" and c not in selected_axis_set]
 
+    # Demote numeric axes to fields if none exist; we need at least one measurable field.
     if not fields:
         numeric_axes = [a for a in axes if a.axis_type == "numeric_ordered"]
         numeric_axes.sort(key=lambda a: a.size, reverse=True)
@@ -144,4 +149,5 @@ def identify_axes(
             fields.append(demote.column)
 
     axes.sort(key=lambda a: a.size)
+    # Cap to prevent combinatorial explosion in grid construction.
     return axes[:6], fields[:20]

@@ -4,11 +4,13 @@ Intercepts large MCP/tool outputs, infers schema + stats, deduplicates by
 content fingerprint, and returns a compact summary for the LLM.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
 import math
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -70,6 +72,11 @@ class BinomialHashPolicy:
     manifold_insights_branch_min_values: int = 10
     orbit_default_resolution: int = 16
     multiscale_default_resolution: int = 16
+    # Export row caps — enforced by tool handlers, not the exporter functions
+    export_csv_max_rows: int = 50_000
+    export_excel_max_rows: int = 10_000
+    export_markdown_max_rows: int = 200
+    export_rows_max_rows: int = 50_000
 
 
 DEFAULT_BINOMIAL_HASH_POLICY = BinomialHashPolicy()
@@ -97,10 +104,11 @@ def _fmt_num(n: Any) -> str:
 class BinomialHash(_StatsMethodsMixin, _ManifoldMethodsMixin):
     """Content-addressed, schema-aware data store.  One per request."""
 
-    __slots__ = ("_slots", "_fingerprints", "_used_bytes",
+    __slots__ = ("_lock", "_slots", "_fingerprints", "_used_bytes",
                  "_ctx_chars_in", "_ctx_chars_out", "_ctx_tool_calls", "_policy")
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self._slots: Dict[str, BinomialHashSlot] = {}
         self._fingerprints: Dict[str, str] = {}
         self._used_bytes: int = 0
@@ -132,46 +140,51 @@ class BinomialHash(_StatsMethodsMixin, _ManifoldMethodsMixin):
             logger.info("[BH] evicted '%s' (%d bytes)", vk, v.byte_size)
 
     def _get_slot(self, key: str) -> Optional[BinomialHashSlot]:
-        slot = self._slots.get(key)
-        if slot:
-            slot.access_count += 1
-        return slot
+        with self._lock:
+            slot = self._slots.get(key)
+            if slot:
+                slot.access_count += 1
+            return slot
 
     def keys(self) -> List[Dict[str, Any]]:
-        return [
-            {"key": s.key, "label": s.label, "row_count": s.row_count,
-             "columns": s.columns[:self._policy.keys_preview_column_count]}
-            for s in self._slots.values()
-        ]
+        with self._lock:
+            return [
+                {"key": s.key, "label": s.label, "row_count": s.row_count,
+                 "columns": s.columns[:self._policy.keys_preview_column_count]}
+                for s in self._slots.values()
+            ]
 
     def _track(self, chars_in: int, chars_out: int) -> None:
-        self._ctx_chars_in += chars_in
-        self._ctx_chars_out += chars_out
-        self._ctx_tool_calls += 1
+        with self._lock:
+            self._ctx_chars_in += chars_in
+            self._ctx_chars_out += chars_out
+            self._ctx_tool_calls += 1
 
     def context_stats(self) -> Dict[str, Any]:
-        return {
-            "tool_calls": self._ctx_tool_calls,
-            "chars_in_raw": self._ctx_chars_in,
-            "chars_out_to_llm": self._ctx_chars_out,
-            "compression_ratio": round(self._ctx_chars_in / max(self._ctx_chars_out, 1), 1),
-            "est_tokens_out": self._ctx_chars_out // 4,
-            "slots": len(self._slots),
-            "mem_bytes": self._used_bytes,
-        }
+        with self._lock:
+            return {
+                "tool_calls": self._ctx_tool_calls,
+                "chars_in_raw": self._ctx_chars_in,
+                "chars_out_to_llm": self._ctx_chars_out,
+                "compression_ratio": round(self._ctx_chars_in / max(self._ctx_chars_out, 1), 1),
+                "est_tokens_out": self._ctx_chars_out // 4,
+                "slots": len(self._slots),
+                "mem_bytes": self._used_bytes,
+            }
 
     def log_summary(self) -> None:
-        s = self.context_stats()
-        slot_details = ", ".join(
-            f"{sl.key}({sl.row_count}r/{sl.access_count}acc)"
-            for sl in self._slots.values()
-        ) or "(empty)"
-        logger.info(
-            "[BH-perf] REQUEST | %d calls | in=%d → out=%d (%.1fx, ~%d tok) | %d slots %.1fMB | %s",
-            s["tool_calls"], s["chars_in_raw"], s["chars_out_to_llm"],
-            s["compression_ratio"], s["est_tokens_out"],
-            s["slots"], s["mem_bytes"] / 1e6, slot_details,
-        )
+        with self._lock:
+            s = self.context_stats()
+            slot_details = ", ".join(
+                f"{sl.key}({sl.row_count}r/{sl.access_count}acc)"
+                for sl in self._slots.values()
+            ) or "(empty)"
+            logger.info(
+                "[BH-perf] REQUEST | %d calls | in=%d → out=%d (%.1fx, ~%d tok) | %d slots %.1fMB | %s",
+                s["tool_calls"], s["chars_in_raw"], s["chars_out_to_llm"],
+                s["compression_ratio"], s["est_tokens_out"],
+                s["slots"], s["mem_bytes"] / 1e6, slot_details,
+            )
 
     # -- ingest --
 
@@ -199,57 +212,58 @@ class BinomialHash(_StatsMethodsMixin, _ManifoldMethodsMixin):
             return out
 
         fp = self._fingerprint(raw_text)
-        if fp in self._fingerprints:
-            existing = self._fingerprints[fp]
-            self._slots[existing].access_count += 1
-            summary = self._build_summary(self._slots[existing])
-            self._track(raw_len, len(summary))
-            return summary
 
-        if len(self._slots) >= MAX_SLOTS:
-            self._evict_if_needed(0)
+        with self._lock:
+            if fp in self._fingerprints:
+                existing = self._fingerprints[fp]
+                self._slots[existing].access_count += 1
+                summary = self._build_summary(self._slots[existing])
+                self._track(raw_len, len(summary))
+                return summary
+
             if len(self._slots) >= MAX_SLOTS:
-                out = raw_text[:INGEST_THRESHOLD_CHARS] + "\n... [truncated, store full]"
+                self._evict_if_needed(0)
+                if len(self._slots) >= MAX_SLOTS:
+                    out = raw_text[:INGEST_THRESHOLD_CHARS] + "\n... [truncated, store full]"
+                    self._track(raw_len, len(out))
+                    return out
+
+            columns = list(
+                dict.fromkeys(
+                    k for r in rows[:self._policy.ingest_key_scan_row_count] for k in r.keys()
+                )
+            )[:self._policy.ingest_max_column_count]
+
+            col_types, col_stats = infer_schema(rows, columns, _to_float)
+            byte_size = self._estimate_bytes(rows)
+            if byte_size > BUDGET_BYTES:
+                logger.warning("[BH] payload '%s' exceeds budget (%d > %d), returning text summary",
+                               label, byte_size, BUDGET_BYTES)
+                out = raw_text[:INGEST_THRESHOLD_CHARS] + "\n... [payload too large to cache]"
                 self._track(raw_len, len(out))
                 return out
+            self._evict_if_needed(byte_size)
+            key = self._make_key(label, fp, self._policy.key_label_prefix_length)
 
-        # Union of all keys across first N rows (handles sparse nested data)
-        columns = list(
-            dict.fromkeys(
-                k for r in rows[:self._policy.ingest_key_scan_row_count] for k in r.keys()
+            from .manifold.builder import build_manifold
+            manifold = build_manifold(rows, columns, col_types, col_stats)
+
+            slot = BinomialHashSlot(
+                key=key, label=label, fingerprint=fp, rows=rows, columns=columns,
+                col_types=col_types, col_stats=col_stats, row_count=len(rows),
+                byte_size=byte_size, nesting=nesting, manifold=manifold,
             )
-        )[:self._policy.ingest_max_column_count]
-
-        col_types, col_stats = infer_schema(rows, columns, _to_float)
-        byte_size = self._estimate_bytes(rows)
-        if byte_size > BUDGET_BYTES:
-            logger.warning("[BH] payload '%s' exceeds budget (%d > %d), returning text summary",
-                           label, byte_size, BUDGET_BYTES)
-            out = raw_text[:INGEST_THRESHOLD_CHARS] + "\n... [payload too large to cache]"
-            self._track(raw_len, len(out))
-            return out
-        self._evict_if_needed(byte_size)
-        key = self._make_key(label, fp, self._policy.key_label_prefix_length)
-
-        from .manifold.builder import build_manifold
-        manifold = build_manifold(rows, columns, col_types, col_stats)
-
-        slot = BinomialHashSlot(
-            key=key, label=label, fingerprint=fp, rows=rows, columns=columns,
-            col_types=col_types, col_stats=col_stats, row_count=len(rows),
-            byte_size=byte_size, nesting=nesting, manifold=manifold,
-        )
-        self._slots[key] = slot
-        self._fingerprints[fp] = key
-        self._used_bytes += byte_size
-        summary = self._build_summary(slot)
-        self._track(raw_len, len(summary))
-        logger.info(
-            "[BH-perf] ingest '%s' → '%s' | %d rows %d cols | %.0fx compression | %.1fms",
-            label, key, len(rows), len(columns),
-            raw_len / max(len(summary), 1), (time.perf_counter() - t0) * 1000,
-        )
-        return summary
+            self._slots[key] = slot
+            self._fingerprints[fp] = key
+            self._used_bytes += byte_size
+            summary = self._build_summary(slot)
+            self._track(raw_len, len(summary))
+            logger.info(
+                "[BH-perf] ingest '%s' → '%s' | %d rows %d cols | %.0fx compression | %.1fms",
+                label, key, len(rows), len(columns),
+                raw_len / max(len(summary), 1), (time.perf_counter() - t0) * 1000,
+            )
+            return summary
 
     def _build_summary(self, slot: BinomialHashSlot) -> str:
         parts = []
@@ -282,146 +296,193 @@ class BinomialHash(_StatsMethodsMixin, _ManifoldMethodsMixin):
     def retrieve(self, key: str, offset: int = 0, limit: int = 25,
                  sort_by: Optional[str] = None, sort_desc: bool = True,
                  columns: Optional[List[str]] = None) -> Dict[str, Any]:
-        t0 = time.perf_counter()
-        slot = self._get_slot(key)
-        if slot is None:
-            return {"error": f"Key '{key}' not found. Available: {list(self._slots.keys())}"}
-        rows = slot.rows
-        if sort_by and sort_by in slot.col_types:
-            rows = sort_rows(rows, sort_by, slot.col_types[sort_by], sort_desc)
-        effective_limit = min(limit, MAX_RETRIEVE_ROWS)
-        sliced = rows[offset:offset + effective_limit]
-        if columns:
-            col_set = set(columns)
-            sliced = [{k: v for k, v in r.items() if k in col_set} for r in sliced]
-        result = {"key": key, "label": slot.label, "total_rows": slot.row_count,
-                  "offset": offset, "returned": len(sliced), "rows": sliced}
-        out_chars = len(json.dumps(result, default=str))
-        self._track(0, out_chars)
-        logger.info("[BH-perf] retrieve '%s' %d/%d rows | %.1fms",
-                    key, len(sliced), slot.row_count, (time.perf_counter() - t0) * 1000)
-        return result
+        with self._lock:
+            t0 = time.perf_counter()
+            slot = self._get_slot(key)
+            if slot is None:
+                return {"error": f"Key '{key}' not found. Available: {list(self._slots.keys())}"}
+            rows = slot.rows
+            if sort_by and sort_by in slot.col_types:
+                rows = sort_rows(rows, sort_by, slot.col_types[sort_by], sort_desc)
+            effective_limit = min(limit, MAX_RETRIEVE_ROWS)
+            sliced = rows[offset:offset + effective_limit]
+            if columns:
+                col_set = set(columns)
+                sliced = [{k: v for k, v in r.items() if k in col_set} for r in sliced]
+            result = {"key": key, "label": slot.label, "total_rows": slot.row_count,
+                      "offset": offset, "returned": len(sliced), "rows": sliced}
+            out_chars = len(json.dumps(result, default=str))
+            self._track(0, out_chars)
+            logger.info("[BH-perf] retrieve '%s' %d/%d rows | %.1fms",
+                        key, len(sliced), slot.row_count, (time.perf_counter() - t0) * 1000)
+            return result
 
     def aggregate(self, key: str, column: str, func: str) -> Dict[str, Any]:
-        t0 = time.perf_counter()
-        slot = self._get_slot(key)
-        if slot is None:
-            return {"error": f"Key '{key}' not found."}
-        if column not in slot.col_types:
-            return {"error": f"Column '{column}' not found. Available: {slot.columns[:self._policy.error_preview_column_count]}"}
-        if func not in _ALL_AGG_FUNCS:
-            return {"error": f"Unknown func '{func}'. Use: {', '.join(sorted(_ALL_AGG_FUNCS))}"}
-        result_val = run_agg(slot.rows, column, func)
-        out = {"key": key, "column": column, "func": func, "result": result_val}
-        self._track(0, len(json.dumps(out, default=str)))
-        logger.info("[BH-perf] aggregate '%s' %s(%s)=%s | %.1fms",
-                    key, func, column, result_val, (time.perf_counter() - t0) * 1000)
-        return out
+        with self._lock:
+            t0 = time.perf_counter()
+            slot = self._get_slot(key)
+            if slot is None:
+                return {"error": f"Key '{key}' not found."}
+            if column not in slot.col_types:
+                return {"error": f"Column '{column}' not found. Available: {slot.columns[:self._policy.error_preview_column_count]}"}
+            if func not in _ALL_AGG_FUNCS:
+                return {"error": f"Unknown func '{func}'. Use: {', '.join(sorted(_ALL_AGG_FUNCS))}"}
+            result_val = run_agg(slot.rows, column, func)
+            out = {"key": key, "column": column, "func": func, "result": result_val}
+            self._track(0, len(json.dumps(out, default=str)))
+            logger.info("[BH-perf] aggregate '%s' %s(%s)=%s | %.1fms",
+                        key, func, column, result_val, (time.perf_counter() - t0) * 1000)
+            return out
 
     def query(self, key: str, where_json: str, sort_by: Optional[str] = None,
               sort_desc: bool = True, limit: int = 25,
               columns: Optional[List[str]] = None) -> Dict[str, Any]:
-        t0 = time.perf_counter()
-        slot = self._get_slot(key)
-        if slot is None:
-            return {"error": f"Key '{key}' not found."}
-        try:
-            where = json.loads(where_json)
-        except (json.JSONDecodeError, TypeError):
-            return {"error": f"Invalid where_json: {where_json[:100]}"}
-        predicate = build_predicate(where, slot.col_types)
-        if predicate is None:
-            return {"error": f"Invalid where clause: {where_json[:200]}"}
-        filtered = [r for r in slot.rows if predicate(r)]
-        sliced = apply_sort_slice_project(filtered, slot, sort_by, sort_desc, limit, columns, MAX_RETRIEVE_ROWS)
-        result = {"key": key, "label": slot.label, "total_rows": slot.row_count,
-                  "matched": len(filtered), "returned": len(sliced), "rows": sliced}
-        self._track(0, len(json.dumps(result, default=str)))
-        logger.info("[BH-perf] query '%s' %d→%d→%d | %.1fms",
-                    key, slot.row_count, len(filtered), len(sliced),
-                    (time.perf_counter() - t0) * 1000)
-        return result
+        with self._lock:
+            t0 = time.perf_counter()
+            slot = self._get_slot(key)
+            if slot is None:
+                return {"error": f"Key '{key}' not found."}
+            try:
+                where = json.loads(where_json)
+            except (json.JSONDecodeError, TypeError):
+                return {"error": f"Invalid where_json: {where_json[:100]}"}
+            predicate = build_predicate(where, slot.col_types)
+            if predicate is None:
+                return {"error": f"Invalid where clause: {where_json[:200]}"}
+            filtered = [r for r in slot.rows if predicate(r)]
+            sliced = apply_sort_slice_project(filtered, slot, sort_by, sort_desc, limit, columns, MAX_RETRIEVE_ROWS)
+            result = {"key": key, "label": slot.label, "total_rows": slot.row_count,
+                      "matched": len(filtered), "returned": len(sliced), "rows": sliced}
+            self._track(0, len(json.dumps(result, default=str)))
+            logger.info("[BH-perf] query '%s' %d→%d→%d | %.1fms",
+                        key, slot.row_count, len(filtered), len(sliced),
+                        (time.perf_counter() - t0) * 1000)
+            return result
 
     def group_by(self, key: str, group_cols: List[str], agg_json: str,
                  sort_by: Optional[str] = None, sort_desc: bool = True,
                  limit: int = 50) -> Dict[str, Any]:
-        t0 = time.perf_counter()
-        slot = self._get_slot(key)
-        if slot is None:
-            return {"error": f"Key '{key}' not found."}
-        for gc in group_cols:
-            if gc not in slot.col_types:
-                return {"error": f"Group column '{gc}' not found. Available: {slot.columns[:self._policy.error_preview_column_count]}"}
-        try:
-            aggs = json.loads(agg_json)
-        except (json.JSONDecodeError, TypeError):
-            return {"error": f"Invalid agg_json: {agg_json[:100]}"}
-        if not isinstance(aggs, list) or not aggs:
-            return {"error": "agg_json must be a non-empty list of {column, func} objects."}
-        groups: Dict[str, List[Dict]] = {}
-        for row in slot.rows:
-            gk = "|".join(str(row.get(gc, "")) for gc in group_cols)
-            groups.setdefault(gk, []).append(row)
-        result_rows = []
-        for grp_rows in groups.values():
-            out = {gc: grp_rows[0].get(gc) for gc in group_cols}
-            for agg in aggs[:self._policy.group_by_agg_limit]:
-                alias = agg.get("alias", f"{agg.get('func', 'count')}_{agg.get('column', '')}")
-                out[alias] = run_agg(grp_rows, agg.get("column", ""), agg.get("func", "count"))
-            result_rows.append(out)
-        if sort_by:
-            is_num = any(a.get("func") in _NUMERIC_FUNCS for a in aggs
-                         if a.get("alias", f"{a.get('func', '')}_{a.get('column', '')}") == sort_by)
-            if is_num:
-                result_rows.sort(key=lambda r: _to_float(r.get(sort_by)) or 0, reverse=sort_desc)
-            else:
-                result_rows.sort(key=lambda r: str(r.get(sort_by, "")), reverse=sort_desc)
-        sliced = result_rows[:min(limit, MAX_RETRIEVE_ROWS)]
-        result = {"key": key, "label": slot.label, "total_rows": slot.row_count,
-                  "groups": len(groups), "returned": len(sliced), "rows": sliced}
-        self._track(0, len(json.dumps(result, default=str)))
-        logger.info("[BH-perf] group_by '%s' by=%s %d groups | %.1fms",
-                    key, group_cols, len(groups), (time.perf_counter() - t0) * 1000)
-        return result
+        with self._lock:
+            t0 = time.perf_counter()
+            slot = self._get_slot(key)
+            if slot is None:
+                return {"error": f"Key '{key}' not found."}
+            for gc in group_cols:
+                if gc not in slot.col_types:
+                    return {"error": f"Group column '{gc}' not found. Available: {slot.columns[:self._policy.error_preview_column_count]}"}
+            try:
+                aggs = json.loads(agg_json)
+            except (json.JSONDecodeError, TypeError):
+                return {"error": f"Invalid agg_json: {agg_json[:100]}"}
+            if not isinstance(aggs, list) or not aggs:
+                return {"error": "agg_json must be a non-empty list of {column, func} objects."}
+            groups: Dict[str, List[Dict]] = {}
+            for row in slot.rows:
+                gk = "|".join(str(row.get(gc, "")) for gc in group_cols)
+                groups.setdefault(gk, []).append(row)
+            result_rows = []
+            for grp_rows in groups.values():
+                out = {gc: grp_rows[0].get(gc) for gc in group_cols}
+                for agg in aggs[:self._policy.group_by_agg_limit]:
+                    alias = agg.get("alias", f"{agg.get('func', 'count')}_{agg.get('column', '')}")
+                    out[alias] = run_agg(grp_rows, agg.get("column", ""), agg.get("func", "count"))
+                result_rows.append(out)
+            if sort_by:
+                is_num = any(a.get("func") in _NUMERIC_FUNCS for a in aggs
+                             if a.get("alias", f"{a.get('func', '')}_{a.get('column', '')}") == sort_by)
+                if is_num:
+                    result_rows.sort(key=lambda r: _to_float(r.get(sort_by)) or 0, reverse=sort_desc)
+                else:
+                    result_rows.sort(key=lambda r: str(r.get(sort_by, "")), reverse=sort_desc)
+            sliced = result_rows[:min(limit, MAX_RETRIEVE_ROWS)]
+            result = {"key": key, "label": slot.label, "total_rows": slot.row_count,
+                      "groups": len(groups), "returned": len(sliced), "rows": sliced}
+            self._track(0, len(json.dumps(result, default=str)))
+            logger.info("[BH-perf] group_by '%s' by=%s %d groups | %.1fms",
+                        key, group_cols, len(groups), (time.perf_counter() - t0) * 1000)
+            return result
 
     def to_excel_batch(self, key: str, columns: Optional[List[str]] = None,
                        sort_by: Optional[str] = None, sort_desc: bool = True,
                        max_rows: int = 200) -> Dict[str, Any]:
-        t0 = time.perf_counter()
-        slot = self._get_slot(key)
-        if slot is None:
-            return {"error": f"Key '{key}' not found."}
-        from .exporters.excel import export_excel_batch
-        result = export_excel_batch(
-            slot.rows, slot.columns, slot.col_types, key, slot.label, slot.row_count,
-            select_columns=columns, sort_by=sort_by, sort_desc=sort_desc, max_rows=max_rows,
-        )
-        self._track(0, len(json.dumps(result, default=str)))
-        logger.info("[BH-perf] excel '%s' | %.1fms",
-                    key, (time.perf_counter() - t0) * 1000)
-        return result
+        with self._lock:
+            t0 = time.perf_counter()
+            slot = self._get_slot(key)
+            if slot is None:
+                return {"error": f"Key '{key}' not found."}
+            from .exporters.excel import export_excel_batch
+            capped = min(max_rows, self._policy.export_excel_max_rows)
+            result = export_excel_batch(
+                slot.rows, slot.columns, slot.col_types, key, slot.label, slot.row_count,
+                select_columns=columns, sort_by=sort_by, sort_desc=sort_desc, max_rows=capped,
+            )
+            self._track(0, len(json.dumps(result, default=str)))
+            logger.info("[BH-perf] excel '%s' | %.1fms",
+                        key, (time.perf_counter() - t0) * 1000)
+            return result
 
     def schema(self, key: str) -> Dict[str, Any]:
-        t0 = time.perf_counter()
-        slot = self._get_slot(key)
-        if slot is None:
-            return {"error": f"Key '{key}' not found."}
-        result = {"key": key, "label": slot.label, "row_count": slot.row_count,
-                  "byte_size": slot.byte_size, "columns": slot.columns,
-                  "col_types": slot.col_types, "col_stats": slot.col_stats}
-        self._track(0, len(json.dumps(result, default=str)))
-        logger.info("[BH-perf] schema '%s' | %.1fms",
-                    key, (time.perf_counter() - t0) * 1000)
-        return result
+        with self._lock:
+            t0 = time.perf_counter()
+            slot = self._get_slot(key)
+            if slot is None:
+                return {"error": f"Key '{key}' not found."}
+            result = {"key": key, "label": slot.label, "row_count": slot.row_count,
+                      "byte_size": slot.byte_size, "columns": slot.columns,
+                      "col_types": slot.col_types, "col_stats": slot.col_stats}
+            self._track(0, len(json.dumps(result, default=str)))
+            logger.info("[BH-perf] schema '%s' | %.1fms",
+                        key, (time.perf_counter() - t0) * 1000)
+            return result
 
     # -- export --
 
     def to_chunks(self) -> List[Dict[str, Any]]:
-        from .exporters.chunks import slot_to_chunk
-        return [
-            slot_to_chunk(
-                slot.key, slot.label, slot.fingerprint, slot.row_count,
-                slot.rows, slot.columns, slot.col_types, slot.col_stats,
-            )
-            for slot in self._slots.values()
-        ]
+        with self._lock:
+            from .exporters.chunks import slot_to_chunk
+            return [
+                slot_to_chunk(
+                    slot.key, slot.label, slot.fingerprint, slot.row_count,
+                    slot.rows, slot.columns, slot.col_types, slot.col_stats,
+                )
+                for slot in self._slots.values()
+            ]
+
+    # -- async wrappers --
+
+    async def aingest(self, raw_text: str, label: str) -> str:
+        return await asyncio.to_thread(self.ingest, raw_text, label)
+
+    async def aretrieve(self, key: str, offset: int = 0, limit: int = 25,
+                        sort_by: Optional[str] = None, sort_desc: bool = True,
+                        columns: Optional[List[str]] = None) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.retrieve, key, offset, limit, sort_by, sort_desc, columns,
+        )
+
+    async def aaggregate(self, key: str, column: str, func: str) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.aggregate, key, column, func)
+
+    async def aquery(self, key: str, where_json: str, sort_by: Optional[str] = None,
+                     sort_desc: bool = True, limit: int = 25,
+                     columns: Optional[List[str]] = None) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.query, key, where_json, sort_by, sort_desc, limit, columns,
+        )
+
+    async def agroup_by(self, key: str, group_cols: List[str], agg_json: str,
+                        sort_by: Optional[str] = None, sort_desc: bool = True,
+                        limit: int = 50) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.group_by, key, group_cols, agg_json, sort_by, sort_desc, limit,
+        )
+
+    async def aschema(self, key: str) -> Dict[str, Any]:
+        return await asyncio.to_thread(self.schema, key)
+
+    async def ato_excel_batch(self, key: str, columns: Optional[List[str]] = None,
+                              sort_by: Optional[str] = None, sort_desc: bool = True,
+                              max_rows: int = 200) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.to_excel_batch, key, columns, sort_by, sort_desc, max_rows,
+        )

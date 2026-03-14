@@ -64,6 +64,7 @@ def rank_corr_dataset(
                 "divergence": round(div, 4),
             })
     pairs.sort(key=lambda x: x["divergence"], reverse=True)
+    # Empirically tuned: Spearman-Pearson divergence > 0.15 suggests nonlinearity.
     nonlinear = [p for p in pairs if p["divergence"] > 0.15]
 
     return {
@@ -260,6 +261,7 @@ def mutual_info_matrix_dataset(
             p_corr = abs(pearson_corr(xs, ys))
             h_i = shannon_entropy([sum(1 for r in range(n) if bucket_index(mat[r][i], col_edges[i]) == b) for b in range(bins)])
             h_j = shannon_entropy([sum(1 for r in range(n) if bucket_index(mat[r][j], col_edges[j]) == b) for b in range(bins)])
+            # NMI = MI/min(H(X),H(Y)) for scale-invariant comparison.
             nmi = mi / min(h_i, h_j) if min(h_i, h_j) > 1e-12 else 0.0
             pairs.append({
                 "field_a": fields[i], "field_b": fields[j],
@@ -369,6 +371,7 @@ def copula_tail_dataset(
 
     # Kendall's tau
     concordant = discordant = 0
+    # Kendall's tau: O(n^2) pairs; cap at 500 per point to avoid quadratic blowup.
     for i in range(n):
         for j in range(i + 1, min(i + 500, n)):
             dx = xs[i] - xs[j]

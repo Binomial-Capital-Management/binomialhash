@@ -25,6 +25,7 @@ def _build_graph_laplacian(
     surface: "ManifoldSurface",
 ) -> Tuple[Any, List[int], Dict[int, int]]:
     """L = D - A (unnormalized). Returns (L, ordered_ids, id_to_pos). Requires numpy."""
+    # L = D - A (degree minus adjacency) captures the graph's connectivity structure.
     if np is None:
         raise RuntimeError("numpy required for spatial reasoning tools.")
 
@@ -64,6 +65,7 @@ def heat_kernel(
 ) -> Dict[str, Any]:
     """HKS(x, t) = sum_i exp(-lambda_i * t) * phi_i(x)^2. Points where heat
     dissipates slowly (low HKS at small t) relative to neighbors are bottlenecks."""
+    # HKS measures how heat dissipates from each vertex; bottlenecks are points where heat gets trapped.
     if np is None:
         return {"error": "numpy required for heat_kernel."}
     if surface.vertex_count < 4:
@@ -76,6 +78,7 @@ def heat_kernel(
 
     evals, evecs = _eigen_decomposition(L, n_eig)
 
+    # Scales chosen relative to spectral range: fast times capture local geometry, slow times capture global structure.
     if time_scales is None:
         lam_max = max(float(evals[-1]), 1e-6)
         lam_min = max(float(evals[1]) if len(evals) > 1 else 1e-6, 1e-6)
@@ -172,6 +175,7 @@ def reeb_graph(
     if len(valued) < 4:
         return {"error": f"Not enough valued points for Reeb graph (got {len(valued)})."}
 
+    # Tracks how connected components of level sets evolve as the function value sweeps from min to max.
     valued.sort()
     vals = [v for v, _ in valued]
     n = len(vals)
@@ -328,7 +332,7 @@ def vector_field_analysis(
 ) -> Dict[str, Any]:
     """Divergence > 0 → source; < 0 → sink. High |curl| → rotational structure."""
     idx_to_gp = _idx_map(surface)
-
+    # div > 0: field radiates outward (source); div < 0: converges inward (sink); high curl: rotational flow.
     divergences: Dict[int, float] = {}
     curl_scores: Dict[int, float] = {}
 
@@ -458,6 +462,7 @@ def laplacian_spectrum(
     n_eig = min(n_eigen, len(ordered) - 1)
     evals, evecs = _eigen_decomposition(L, n_eig)
 
+    # λ₂ (algebraic connectivity): large gap = tightly connected, small gap = bottleneck.
     spectral_gap = float(evals[1]) if len(evals) > 1 else 0.0
 
     if spectral_gap < 1e-6:
@@ -545,7 +550,7 @@ def scalar_harmonics(
 
     L, ordered, pos = _build_graph_laplacian(surface)
     idx_to_gp = _idx_map(surface)
-
+    # Decomposing into Laplacian eigenbasis separates smooth trends (low-freq) from structural anomalies (high-freq residual).
     signal = np.zeros(len(ordered))
     valid = 0
     for i, idx in enumerate(ordered):
@@ -635,6 +640,7 @@ def diffusion_distance(
     if surface.vertex_count < 4:
         return {"error": "Grid too small for diffusion distance."}
 
+    # Averages over all paths (unlike geodesic shortest path), making it robust to noise.
     L, ordered, pos = _build_graph_laplacian(surface)
     n_eig = min(n_eigen, len(ordered) - 1)
     evals, evecs = _eigen_decomposition(L, n_eig)

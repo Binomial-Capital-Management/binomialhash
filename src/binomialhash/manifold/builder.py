@@ -182,6 +182,7 @@ def _to_summary(self: ManifoldSurface) -> Dict[str, Any]:
     }
 
 
+# Monkey-patched to avoid circular imports: ManifoldSurface lives in structures.py but methods depend on navigation, spatial, etc.
 ManifoldSurface.at = _at
 ManifoldSurface.at_index = _at_index
 ManifoldSurface.highest_curvature = _highest_curvature
@@ -251,6 +252,7 @@ def build_manifold(
             wraps, orientation = check_boundary_wrap(grid, axes, fields, i)
             ax.wraps = wraps
             ax.wrap_orientation = orientation
+            # orientation=1: preserving (circle/torus); orientation=-1: reversing (Möbius/Klein).
             if wraps:
                 if orientation == 1:
                     handles += 1
@@ -309,8 +311,7 @@ def build_manifold(
         is_manifold = bool(face_stats.get("is_manifold", False))
         nonmanifold_edges = int(face_stats.get("nonmanifold_edges", 0))
 
-    # Surface naming: only use canonical names when faces exist AND manifoldness holds.
-    # Otherwise downgrade to graph_only or keep as product_topology_label for diagnostics.
+    # Three-tier fallback: graph_only → nonmanifold_complex → canonical product name.
     if face_count == 0:
         surface_name = "graph_only"
     elif not is_manifold:

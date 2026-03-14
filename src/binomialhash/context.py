@@ -16,6 +16,7 @@ _bh_instance: contextvars.ContextVar[Optional[BinomialHash]] = contextvars.Conte
     default=None,
 )
 
+# Depth counter (not a bool) so nested bh_raw_mode() contexts work correctly.
 _bh_raw_mode_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
     "binomial_hash_raw_mode_depth",
     default=0,
@@ -58,7 +59,13 @@ def bh_ingest(raw_text: str, label: str) -> str:
     return get_binomial_hash().ingest(raw_text, label)
 
 
+async def async_bh_ingest(raw_text: str, label: str) -> str:
+    """Async variant of :func:`bh_ingest`."""
+    return await get_binomial_hash().aingest(raw_text, label)
+
+
 __all__ = [
+    "async_bh_ingest",
     "bh_ingest",
     "bh_raw_mode",
     "get_binomial_hash",

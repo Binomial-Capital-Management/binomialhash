@@ -94,12 +94,12 @@ def build_artifact(
     elif format == "markdown":
         content = export_markdown(
             rows, columns, col_types,
-            max_rows=min(max_rows, 200),
+            max_rows=max_rows,
             total_rows=total_rows,
             label=label,
             **common,
         )
-        row_count = min(len(rows), max_rows, 200)
+        row_count = min(len(rows), max_rows)
 
     elif format == "json":
         exported = export_rows(

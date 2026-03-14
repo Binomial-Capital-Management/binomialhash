@@ -45,6 +45,7 @@ def dijkstra(
             if neighbor is None:
                 continue
             if target_field:
+                # |Δ target| + ε makes geodesics follow the smoothest path through the target field landscape.
                 current_value = point.field_values.get(target_field, 0.0)
                 neighbor_value = neighbor.field_values.get(target_field, 0.0)
                 weight = abs(neighbor_value - current_value) + 1e-6
@@ -84,6 +85,7 @@ def basin_of(surface: ManifoldSurface, point: GridPoint, target_field: str) -> O
     index_map = idx_to_point(surface)
     current = point
     visited = {current.index}
+    # 100-step cap prevents infinite loops in degenerate graphs.
     for _ in range(100):
         my_value = current.field_values.get(target_field)
         if my_value is None:
@@ -345,6 +347,7 @@ def multiscale_view(
     target_field: Optional[str] = None,
     resolution: int = 16,
 ) -> Dict[str, Any]:
+    # Runs orbit() at increasing radii to show how statistics change with scale.
     cleaned = sorted(set(radius for radius in radii if isinstance(radius, int) and radius >= 1))
     if not cleaned:
         return {"error": "radii must include at least one integer >= 1"}
@@ -386,6 +389,7 @@ def basin(
                 neighbor_value = neighbor.field_values.get(target_field)
                 if neighbor_value is None:
                     continue
+                # Direction-aware: descend finds minima, ascend finds maxima.
                 better = neighbor_value < best_value if direction != "ascend" else neighbor_value > best_value
                 if better:
                     best_value = neighbor_value
@@ -426,6 +430,7 @@ def trace_extremum(
     current = point
     path = [current]
     visited = {current.index}
+    # Ridge traces follow steepest ascent; valley traces follow steepest descent.
     ascend = mode == "ridge"
 
     for _ in range(max_steps):

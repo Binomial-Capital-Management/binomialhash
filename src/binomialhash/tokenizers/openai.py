@@ -33,6 +33,7 @@ def count_tokens(text: str, *, encoding: str = _DEFAULT_ENCODING) -> int:
     Falls back to ``chars / 4`` if tiktoken is not installed.
     """
     if _TIKTOKEN_AVAILABLE and _enc is not None:
+        # Reuse the pre-built encoder for the default encoding; create a fresh one for non-default encodings.
         if encoding == _DEFAULT_ENCODING:
             return len(_enc.encode(text))
         enc = _tiktoken.get_encoding(encoding)

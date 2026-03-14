@@ -48,6 +48,8 @@ def _apply_strict_mode(params: Dict[str, Any]) -> None:
     See: https://platform.openai.com/docs/guides/structured-outputs
     """
     params.setdefault("additionalProperties", False)
+    # Structured Outputs requires every property to be in "required";
+    # optional params must use nullable types instead.
     props = params.get("properties", {})
     params["required"] = list(props.keys())
 
@@ -59,6 +61,7 @@ def _spec_to_responses(spec: ToolSpec, *, strict: bool = False) -> Dict[str, Any
     if strict:
         _apply_strict_mode(params)
 
+    # Responses API: flat layout with type/name/description/parameters at top level
     tool: Dict[str, Any] = {
         "type": "function",
         "name": spec.name,
@@ -77,6 +80,7 @@ def _spec_to_chat_completions(spec: ToolSpec, *, strict: bool = False) -> Dict[s
     if strict:
         _apply_strict_mode(params)
 
+    # Chat Completions API: nested under {"type": "function", "function": {...}}
     fn: Dict[str, Any] = {
         "name": spec.name,
         "description": spec.description,

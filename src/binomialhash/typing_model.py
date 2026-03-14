@@ -73,6 +73,7 @@ def classify_base_type(
     best_type, best_score = ranked[0]
     second_score = ranked[1][1] if len(ranked) > 1 else 0.0
 
+    # Assign mixed when no single type dominates and a second type is significant.
     if (
         best_score < policy.mixed_max_best_score
         and second_score > policy.mixed_min_second_score
@@ -100,6 +101,7 @@ def semantic_tags_for_profile(
     counters = profile.value_kind_counts
     normalized_strings = profile.normalized_strings
 
+    # Dynamic cap: min(50, max(12, 20% of rows)) prevents over-labeling high-cardinality strings as categorical.
     categorical_limit = min(
         policy.categorical_max_unique_cap,
         max(policy.categorical_min_unique_floor, int(non_null * policy.categorical_max_unique_ratio)),

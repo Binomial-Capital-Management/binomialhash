@@ -44,10 +44,11 @@ def export_csv(
     """
     if sort_by and sort_by in col_types:
         rows = sort_rows(rows, sort_by, col_types[sort_by], sort_desc)
-    rows = rows[: min(max_rows, 5000)]
+    rows = rows[:max_rows]
 
     headers = list(select_columns) if select_columns else list(columns)
 
+    # newline="" required by csv module to avoid double line-endings on Windows
     buf = io.StringIO(newline="")
     writer = csv.writer(buf, lineterminator="\n")
     if include_header:

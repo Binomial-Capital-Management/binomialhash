@@ -132,6 +132,7 @@ def compute_regime_boundaries(
     boundaries: List[Dict[str, Any]] = []
     for i, d in enumerate(deltas):
         z = (d / delta_std) if delta_std > 1e-9 else 0.0
+        # Flags statistically unusual jumps between adjacent quantile buckets.
         if abs(z) >= z_threshold:
             hi = round(edges[i + 2], 6) if i + 2 < len(edges) else round(edges[-1], 6)
             boundaries.append({
@@ -178,6 +179,7 @@ def compute_branch_divergence(
                 continue
             vmin, vmax = min(vals), max(vals)
             mean_abs = abs(sum(vals) / len(vals)) or 1.0
+            # CV-like spread: high values mean the same target bucket has wildly different driver contexts.
             spread_scores.append((vmax - vmin) / mean_abs)
 
         if spread_scores:

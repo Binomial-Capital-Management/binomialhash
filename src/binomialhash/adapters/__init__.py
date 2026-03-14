@@ -29,6 +29,7 @@ from .gemini import get_gemini_tools, handle_gemini_tool_call
 from .openai import get_openai_tools, handle_openai_tool_call
 from .xai import get_xai_tools, handle_xai_tool_call
 
+# provider name → formatter function; looked up at runtime by get_tools_for_provider
 _PROVIDERS = {
     "openai": get_openai_tools,
     "anthropic": get_anthropic_tools,

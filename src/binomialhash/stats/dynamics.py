@@ -57,6 +57,7 @@ def autocorrelation_dataset(
         return {"error": "Constant series — no autocorrelation."}
 
     acf_vals = []
+    # ~2/sqrt(n) approximate 95% CI under white-noise null.
     sig_threshold = 2.0 / math.sqrt(n)
     significant_lags = []
     for lag in range(1, ml + 1):
@@ -75,7 +76,7 @@ def autocorrelation_dataset(
             dominant_period = acf_vals[i]["lag"]
             break
 
-    # Slow ACF decay suggests non-stationarity
+    # Slow ACF decay suggests non-stationarity; 0.3 is heuristic.
     decay_rate = abs(acf_vals[0]["acf"] - acf_vals[min(4, len(acf_vals) - 1)]["acf"]) if len(acf_vals) > 4 else 1.0
     is_stationary = decay_rate > 0.3
 
@@ -289,6 +290,7 @@ def phase_space_dataset(
                 if idx < next_delay_len and nn_idx < next_delay_len:
                     extra = abs(x_arr[idx + dim * tau] - x_arr[nn_idx + dim * tau])
                     ratio = extra / nn_dist
+                    # FNN: ratio > threshold indicates false neighbor (dim too low).
                     if ratio > policy.phase_fnn_threshold:
                         fnn_count += 1
         fnn_pct = fnn_count / n_check if n_check > 0 else 0
@@ -392,7 +394,7 @@ def ergodicity_test_dataset(
             "n_chunks": len(chunk_means),
         })
 
-    # Does spread decrease as 1/sqrt(window)? (ergodicity test)
+    # Ergodicity: spread of time-averages should scale as 1/sqrt(window).
     if len(time_avgs) >= 2 and time_avgs[0]["spread_of_means"] > 1e-12:
         expected_ratio = math.sqrt(windows[0] / windows[-1])
         actual_ratio = time_avgs[-1]["spread_of_means"] / time_avgs[0]["spread_of_means"] if time_avgs[0]["spread_of_means"] > 1e-12 else 1

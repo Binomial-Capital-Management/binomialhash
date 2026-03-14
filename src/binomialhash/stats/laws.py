@@ -45,7 +45,8 @@ def entropy_spectrum_dataset(
 
     ms = max_scale or policy.entropy_max_scale
     m = embedding_dim or policy.entropy_default_embed
-    r_tol = 0.15  # tolerance as fraction of std
+    # Sample entropy tolerance: 0.15*std balances sensitivity and robustness.
+    r_tol = 0.15
 
     def _sample_entropy(series, m_val, r_val):
         n_s = len(series)
@@ -139,6 +140,7 @@ def renormalization_flow_dataset(
         block_n = n // (2 ** (scale - 1))
         if block_n < 10:
             break
+        # Dyadic coarse-graining: block size doubles at each scale.
         block_size = 2 ** (scale - 1)
         coarsened = np.array([x[i * block_size:(i + 1) * block_size].mean(axis=0) for i in range(block_n)])
         corr = np.corrcoef(coarsened, rowvar=False)
@@ -213,6 +215,7 @@ def symmetry_scan_dataset(
         std_diff = (sum((d - mean_diff) ** 2 for d in diffs) / len(diffs)) ** 0.5
         cv_raw = std_raw / abs(mean_raw) if abs(mean_raw) > 1e-12 else float("inf")
         cv_diff = std_diff / abs(mean_diff) if abs(mean_diff) > 1e-12 else float("inf")
+        # Translation inv: differences have lower CV than raw if mean-stationary.
         if cv_diff < cv_raw * 0.5:
             symmetries.append({
                 "type": "translation_invariance", "field": fields[i],

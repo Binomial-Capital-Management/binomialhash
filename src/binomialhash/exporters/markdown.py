@@ -16,6 +16,7 @@ from ..schema import T_NUMERIC
 def _fmt_cell(value: Any, max_width: int = 40) -> str:
     if value is None:
         return ""
+    # Escape pipes so they don't break the table structure
     s = str(value).replace("|", "\\|")
     if len(s) > max_width:
         return s[: max_width - 1] + "\u2026"
@@ -23,6 +24,7 @@ def _fmt_cell(value: Any, max_width: int = 40) -> str:
 
 
 def _align_marker(col: str, col_types: Dict[str, str]) -> str:
+    # GFM alignment: "---:" = right-align (numbers), ":---" = left-align
     if col_types.get(col) == T_NUMERIC:
         return "---:"
     return ":---"
@@ -65,8 +67,7 @@ def export_markdown(
     if sort_by and sort_by in col_types:
         rows = sort_rows(rows, sort_by, col_types[sort_by], sort_desc)
 
-    capped = min(max_rows, 200)
-    display_rows = rows[:capped]
+    display_rows = rows[:max_rows]
     headers = list(select_columns) if select_columns else list(columns)
 
     lines: List[str] = []

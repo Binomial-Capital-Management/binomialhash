@@ -43,7 +43,7 @@ def export_rows(
     if sort_by and sort_by in col_types:
         rows = sort_rows(rows, sort_by, col_types[sort_by], sort_desc)
 
-    sliced = rows[offset: offset + min(limit, 5000)]
+    sliced = rows[offset: offset + limit]
 
     if select_columns:
         col_set = set(select_columns)

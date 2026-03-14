@@ -13,6 +13,7 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
+# ~4 chars/token is a rough average across English prose and JSON; overestimates for code, underestimates for CJK.
 CHARS_PER_TOKEN_ESTIMATE = 4
 
 
@@ -38,6 +39,7 @@ class FallbackCounter:
     counting is not active.
     """
 
+    # Class-level set acts as a singleton dedup so each provider warns only once per process.
     _warned: set = set()
 
     def __init__(self, provider: str = "unknown") -> None:

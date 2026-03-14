@@ -2,6 +2,7 @@
 
 from .context import (
     _bh_raw_mode_depth,
+    async_bh_ingest,
     bh_ingest,
     bh_raw_mode,
     get_binomial_hash,
@@ -15,6 +16,7 @@ __all__ = [
     "BinomialHashSlot",
     "NestingProfile",
     "_bh_raw_mode_depth",
+    "async_bh_ingest",
     "bh_ingest",
     "bh_raw_mode",
     "get_binomial_hash",

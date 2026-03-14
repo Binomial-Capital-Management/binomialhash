@@ -39,6 +39,7 @@ def analyze_nesting(data: Any, _depth: int = 0, _max_depth: int = 12) -> Nesting
         if isinstance(obj, dict):
             child_count = len(obj)
             branching.setdefault(depth, []).append(child_count)
+            # Only record signature at shallow depths; deeper structure is typically repetitive.
             if depth < 4:
                 signature_parts.append(f"d{depth}:dict({child_count})")
             for value in obj.values():
@@ -47,6 +48,7 @@ def analyze_nesting(data: Any, _depth: int = 0, _max_depth: int = 12) -> Nesting
             array_lengths.setdefault(depth, []).append(len(obj))
             if depth < 4:
                 signature_parts.append(f"d{depth}:list({len(obj)})")
+            # Cap list traversal at 200 elements to avoid blowup on massive arrays.
             for item in obj[:200]:
                 walk(item, depth + 1)
         else:
@@ -74,6 +76,7 @@ def find_largest_list(data: Dict[str, Any], depth: int = 0) -> Tuple[str, List[D
     for key, value in data.items():
         if isinstance(value, list) and len(value) > len(best_list) and value and isinstance(value[0], dict):
             best_key, best_list = key, value
+        # Recurse at most 3 levels to find the main data table without deep traversal.
         elif isinstance(value, dict) and depth < 2:
             child_key, child_list = find_largest_list(value, depth + 1)
             if len(child_list) > len(best_list):
@@ -153,6 +156,7 @@ def explode_embedded_table(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     best_col = max(candidate_stats, key=lambda column: (candidate_stats[column]["rows"], candidate_stats[column]["items"]))
     best = candidate_stats[best_col]
+    # 30% threshold ensures the embedded table appears in most rows, not just a rare field.
     if best["rows"] < max(2, len(sample_rows) * 0.3):
         return rows
 

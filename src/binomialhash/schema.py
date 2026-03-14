@@ -20,9 +20,11 @@ T_LIST = "list"
 T_MIXED = "mixed"
 T_NULL = "null"
 
+# Stricter than float() to avoid false positives on dates, IDs, or version strings.
 _STRICT_NUMERIC_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}")
+# Semantic subtype patterns — detected values still count as T_STRING but get tagged.
 _CURRENCY_RE = re.compile(r"^\s*[$€£¥]\s*[+-]?(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?\s*$")
 _PERCENT_RE = re.compile(r"^\s*[+-]?(?:\d+\.?\d*|\.\d+)\s*%\s*$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9._:/-]{2,64}$")
@@ -177,6 +179,7 @@ def _column_profile(values: List[Any]) -> SchemaFeatureProfile:
         if isinstance(value, list):
             counters[T_LIST] += 1
             list_lengths.append(len(value))
+            # Sample first 20 items to classify list contents without scanning huge arrays.
             if value and all(isinstance(item, dict) for item in value[: min(len(value), 20)]):
                 counters["list_of_dicts"] += 1
             elif value and all(not isinstance(item, (dict, list)) for item in value[: min(len(value), 20)]):
@@ -230,6 +233,7 @@ def _column_profile(values: List[Any]) -> SchemaFeatureProfile:
 
         counters[T_MIXED] += 1
 
+    # Serialize to JSON for consistent hashing of heterogeneous types (dicts, lists, scalars).
     unique_count = len({json.dumps(value, sort_keys=True, default=str) for value in non_null_values})
     avg_length = (
         round(sum(len(value) for value in normalized_strings) / len(normalized_strings), 6)

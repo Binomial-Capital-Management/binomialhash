@@ -424,11 +424,11 @@ class TestExportExcelBatch:
         result = export_excel_batch(self.ROWS, self.COLS, self.TYPES, "k1", "Test", 20, max_rows=5)
         assert result["total_exported"] == 5
 
-    def test_hard_cap_500(self):
+    def test_no_hidden_hard_cap(self):
         from binomialhash.exporters.excel import export_excel_batch
         big = [{"a": i} for i in range(600)]
         result = export_excel_batch(big, ["a"], {"a": "numeric"}, "k1", "Test", 600, max_rows=600)
-        assert result["total_exported"] == 500
+        assert result["total_exported"] == 600
 
     def test_total_available_reflects_original(self):
         from binomialhash.exporters.excel import export_excel_batch

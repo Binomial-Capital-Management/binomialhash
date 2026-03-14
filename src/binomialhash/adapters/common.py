@@ -49,6 +49,8 @@ def handle_tool_call(
     KeyError
         If *name* does not match any spec.
     """
+    # Rebuild index each call so callers can pass different spec subsets
+    # without worrying about stale caches.
     idx = _build_index(specs)
     if name not in idx:
         raise KeyError(
@@ -89,10 +91,12 @@ def parse_arguments(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     if isinstance(raw, str):
+        # OpenAI / xAI send arguments as a JSON-encoded string
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
                 return parsed
         except (json.JSONDecodeError, TypeError):
             pass
+    # None, empty, or unparseable → treat as no arguments
     return {}

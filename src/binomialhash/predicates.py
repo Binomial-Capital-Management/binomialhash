@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 from .schema import T_NUMERIC, T_STRING
 from .stats import to_float_permissive
 
+# None guards on >, <, >=, <= prevent TypeError when comparing missing values.
 _CMP_OPS: Dict[str, Callable[[Any, Any], bool]] = {
     "=": lambda a, b: a == b,
     "!=": lambda a, b: a != b,
@@ -47,6 +48,7 @@ def build_leaf_predicate(col: str, op: str, val: Any, col_type: str) -> Optional
         return None
     if col_type == T_NUMERIC:
         float_val = to_float_permissive(val)
+        # Default-argument capture avoids late-binding closure bug with loop variables.
         return lambda row, _cmp=cmp_fn, _target=float_val: _cmp(to_float_permissive(row.get(col)), _target)
     return lambda row, _cmp=cmp_fn, _target=val: _cmp(row.get(col), _target)
 
@@ -149,6 +151,7 @@ def filter_rows_by_condition(
             match = True
         elif op == "<=" and fv <= target_v:
             match = True
+        # Epsilon comparison avoids floating-point equality issues for numeric "=" checks.
         elif op == "=" and abs(fv - target_v) < 1e-9:
             match = True
         elif op == "!=" and abs(fv - target_v) >= 1e-9:

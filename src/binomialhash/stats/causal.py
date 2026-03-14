@@ -69,6 +69,7 @@ def causal_graph_dataset(
         d = np.sqrt(abs(prec[0, 0] * prec[1, 1]))
         return -prec[0, 1] / d if d > 1e-12 else 0.0
 
+    # Fisher z-transform for partial correlation p-value under null.
     def _fisher_z_pvalue(r: float, n_pts: int, cond_size: int) -> float:
         dof = n_pts - cond_size - 3
         if dof < 1 or abs(r) >= 1.0:
@@ -110,7 +111,7 @@ def causal_graph_dataset(
                     directed.add((i, j))
                     directed.add((k, j))
 
-    # Meek R1 orientation
+    # Meek R1: orient v-structures and propagate via rules.
     for i in range(p):
         for j in adj[i]:
             if (i, j) in directed and (j, i) not in directed:
@@ -465,6 +466,7 @@ def counterfactual_impact_dataset(
         return {"error": "numpy required for synthetic control."}
     X = np.array(x_pre, dtype=float)
     Y = np.array(y_pre, dtype=float)
+    # Synthetic control: non-negative donor weights summing to 1.
     beta = np.linalg.lstsq(X, Y, rcond=None)[0]
     beta = np.clip(beta, 0, None)
     beta_sum = beta.sum()

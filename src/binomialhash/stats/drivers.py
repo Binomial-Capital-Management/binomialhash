@@ -51,6 +51,7 @@ def polynomial_test_dataset(
     best_r2 = linear
     for deg in range(2, max_degree + 1):
         r2 = results.get(f"degree_{deg}_r2", 0)
+        # Require R^2 gain > 0.02 to avoid overfitting to noise.
         if r2 > best_r2 + 0.02:
             best_deg = deg
             best_r2 = r2
@@ -104,6 +105,7 @@ def interaction_screen_dataset(
             r2_additive = ols_r2(xs_additive, ys)
             r2_joint = ols_r2(xs_ab, ys)
             strength = r2_joint - r2_additive
+            # Synergy/suppression thresholds tuned to avoid flagging noise.
             if r2_joint > r2_a and r2_joint > r2_b:
                 itype = "synergy" if strength > 0.02 else "additive"
             else:
@@ -178,6 +180,7 @@ def sparse_drivers_dataset(
 
     if alpha is None:
         alpha_max = float(np.max(np.abs(xn.T @ yn))) / n
+        # Log-spaced alpha path from max (all zeros) down to 1% of max.
         alphas = np.logspace(math.log10(alpha_max), math.log10(alpha_max * 0.01), policy.sparse_n_alphas)
         best_alpha = alphas[0]
         best_score = -1e9
@@ -374,6 +377,7 @@ def information_bottleneck_dataset(
                     pyx[s][t] * (math.log(pyx[s][t] / pyc[c][t]) if pyx[s][t] > 1e-12 and pyc[c][t] > 1e-12 else 0)
                     for t in range(bins)
                 )
+                # IB cost: -I(T;Y) + (1/beta)*I(T;X); higher beta favors compression.
                 cost = kl - (1.0 / beta) * math.log(max(pc[c], 1e-12))
                 if cost < best_cost:
                     best_cost = cost

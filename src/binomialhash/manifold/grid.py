@@ -42,6 +42,7 @@ def build_grid(
                 except (ValueError, TypeError):
                     pass
 
+    # Average field values when multiple rows map to the same grid coordinate.
     for coord, field_lists in accumulator.items():
         avg_fields: Dict[str, float] = {}
         for f, vals in field_lists.items():
@@ -67,6 +68,7 @@ def build_adjacency(grid: Dict[Tuple, GridPoint], axes: List[ManifoldAxis]) -> N
         gp = grid[coord]
         for axis_i, ax in enumerate(axes):
             current_val = coord[axis_i]
+            # Categorical axes: fully connected (every value neighbors every other) since no natural ordering.
             if not ax.ordered:
                 for other_coord in coord_list:
                     if other_coord == coord:
@@ -86,6 +88,7 @@ def build_adjacency(grid: Dict[Tuple, GridPoint], axes: List[ManifoldAxis]) -> N
                     continue
                 for delta in [-1, 1]:
                     npos = pos + delta
+                    # Modular arithmetic implements toroidal wrap-around for ordered axes.
                     if ax.wraps:
                         npos = npos % len(val_list)
                     if 0 <= npos < len(val_list):

@@ -13,6 +13,7 @@ try:
 except Exception:  # pragma: no cover
     np = None
 
+# Valid aggregation functions: _NUMERIC_FUNCS require numeric input; _ALL_AGG_FUNCS adds count/count_distinct.
 _NUMERIC_FUNCS = frozenset(("sum", "mean", "median", "min", "max", "std"))
 _ALL_AGG_FUNCS = _NUMERIC_FUNCS | frozenset(("count", "count_distinct"))
 
@@ -127,6 +128,7 @@ def to_float_permissive(v: Any) -> Optional[float]:
                 return f
         except ValueError:
             pass
+        # Last-resort coercion: strip currency symbols, commas, etc. before parsing.
         cleaned = "".join(c for c in v if c.isdigit() or c in ".+-eE")
         if cleaned:
             try:
@@ -197,6 +199,7 @@ def pearson_corr(xs: List[float], ys: List[float]) -> float:
     denominator = den_x * den_y
     if denominator == 0:
         return 0.0
+    # Clamp to [-1, 1] to guard against floating-point drift.
     return max(min(numerator / denominator, 1.0), -1.0)
 
 
@@ -311,7 +314,7 @@ def shannon_entropy(counts: List[int]) -> float:
 
 
 def ols_r2(xs_all: List[List[float]], ys: List[float]) -> float:
-    """Quick OLS R-squared using normal equations with Gaussian elimination."""
+    """Quick OLS R-squared using normal equations with Gaussian elimination (partial pivoting) to avoid numpy dependency."""
     n = len(ys)
     p = len(xs_all[0]) if xs_all else 0
     if n < p + 2:

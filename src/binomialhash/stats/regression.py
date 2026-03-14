@@ -62,6 +62,7 @@ def regress_dataset(
     if n < p + policy.regression_min_extra_samples:
         return {"error": f"Not enough complete rows ({n}) for {p} drivers."}
 
+    # Build normal equations X'X β = X'y manually to avoid numpy dependency.
     xtx = [[0.0] * (p + 1) for _ in range(p + 1)]
     xty = [0.0] * (p + 1)
     for i in range(n):
@@ -71,6 +72,7 @@ def regress_dataset(
             for b in range(p + 1):
                 xtx[a][b] += row_ext[a] * row_ext[b]
 
+    # Partial pivoting for numerical stability; singular matrix implies collinear drivers.
     aug = [xtx[i][:] + [xty[i]] for i in range(p + 1)]
     for col in range(p + 1):
         max_row = col
@@ -183,6 +185,7 @@ def partial_correlate_dataset(
             "samples": n,
         }
 
+    # Frisch-Waugh-Lovell: OLS-regress each variable on controls, then correlate residuals.
     def residuals(vals: List[float], ctrl: List[List[float]]) -> List[float]:
         p = len(controls)
         xtx = [[0.0] * (p + 1) for _ in range(p + 1)]
@@ -393,6 +396,7 @@ def dependency_screen_dataset(
         else:
             xfull = np.column_stack([np.ones(len(complete_rows)), x])
         coef = float(np.linalg.lstsq(xfull, y, rcond=None)[0][1])
+        # Weighted blend of |partial|, |raw|, and |coef| balances different evidence types.
         score = (
             policy.dependency_score_partial_weight * abs(partial)
             + policy.dependency_score_raw_weight * abs(raw)

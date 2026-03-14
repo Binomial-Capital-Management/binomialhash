@@ -47,6 +47,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from ..tools.base import ToolSpec
 from .common import handle_tool_call
 
+# Anthropic enforces strict tool-name format: alphanumeric, hyphens, underscores, max 64 chars
 _ANTHROPIC_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
@@ -67,6 +68,8 @@ def _spec_to_anthropic(
     _validate_name(spec.name)
     description = spec.description
     if examples:
+        # Anthropic lacks a native examples field; append to description
+        # for few-shot guidance on how to call the tool.
         lines = []
         for ex in examples:
             pairs = ", ".join(f'"{k}": {json.dumps(v)}' for k, v in ex.items())
@@ -122,6 +125,7 @@ def handle_anthropic_tool_use(
         ``content_block.input`` — Anthropic delivers this as a
         **parsed dict**, not a JSON string.
     """
+    # Anthropic delivers input as a parsed dict, but guard against edge cases
     if not isinstance(tool_input, dict):
         tool_input = {}
     return handle_tool_call(specs, name, tool_input)

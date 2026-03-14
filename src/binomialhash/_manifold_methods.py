@@ -34,6 +34,7 @@ class _ManifoldMethodsMixin:
                     name, key, (time.perf_counter() - t0) * 1000)
         return result
 
+    # Normalize dict or list/tuple input to a uniform string tuple for grid lookup.
     def _resolve_coord(self, manifold, inp: Any) -> Tuple[str, ...]:
         if isinstance(inp, dict):
             return tuple(str(inp.get(a.column, "")) for a in manifold.axes)
@@ -237,6 +238,7 @@ class _ManifoldMethodsMixin:
         cond_b = self._parse_json(condition_b_json)
         if cond_a is None or cond_b is None:
             return {"error": "Invalid condition JSON."}
+        # Override axis columns to T_STRING because grid coordinates are stored as strings.
         gp_col_types = dict(slot.col_types)
         for ax in slot.manifold.axes:
             gp_col_types[ax.column] = T_STRING

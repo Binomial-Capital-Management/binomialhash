@@ -76,27 +76,60 @@ def _resolve_bh(explicit: Any) -> Any:
     return get_binomial_hash()
 
 
-def _maybe_ingest(result: Any, *, label: str, bh: Any, threshold: int) -> Any:
-    """Inspect *result* and ingest into BH if it is large structured data."""
+def _serialise_if_large(result: Any, threshold: int):
+    """Return ``(serialised, True)`` when *result* should be ingested, else ``(result, False)``."""
+    # Short-circuit when interception is disabled to avoid unnecessary serialisation.
     if _raw_mode.get(False):
-        return result
+        return result, False
 
     if isinstance(result, (dict, list)):
         try:
             serialised = json.dumps(result, default=str)
         except (TypeError, ValueError):
-            return result
+            return result, False
     elif isinstance(result, str):
         serialised = result
     else:
-        return result
+        return result, False
 
     if len(serialised) <= threshold:
+        return result, False
+    return serialised, True
+
+
+def _maybe_ingest(result: Any, *, label: str, bh: Any, threshold: int) -> Any:
+    """Inspect *result* and ingest into BH if it is large structured data."""
+    serialised, should_ingest = _serialise_if_large(result, threshold)
+    if not should_ingest:
         return result
 
     instance = _resolve_bh(bh)
     try:
         summary = instance.ingest(serialised, label)
+        logger.debug(
+            "[BH-middleware] ingested %d chars under label '%s'",
+            len(serialised),
+            label,
+        )
+        return summary
+    except Exception:
+        logger.warning(
+            "[BH-middleware] ingest failed for label '%s', passing through",
+            label,
+            exc_info=True,
+        )
+        return result
+
+
+async def _async_maybe_ingest(result: Any, *, label: str, bh: Any, threshold: int) -> Any:
+    """Async variant of :func:`_maybe_ingest` — calls ``aingest`` to avoid blocking the loop."""
+    serialised, should_ingest = _serialise_if_large(result, threshold)
+    if not should_ingest:
+        return result
+
+    instance = _resolve_bh(bh)
+    try:
+        summary = await instance.aingest(serialised, label)
         logger.debug(
             "[BH-middleware] ingested %d chars under label '%s'",
             len(serialised),
@@ -139,7 +172,7 @@ def wrap_tool_with_bh(
         @functools.wraps(fn)
         async def _async_wrapper(*args: Any, **kwargs: Any) -> Any:
             result = await fn(*args, **kwargs)
-            return _maybe_ingest(result, label=label, bh=bh, threshold=threshold)
+            return await _async_maybe_ingest(result, label=label, bh=bh, threshold=threshold)
         return _async_wrapper  # type: ignore[return-value]
 
     @functools.wraps(fn)

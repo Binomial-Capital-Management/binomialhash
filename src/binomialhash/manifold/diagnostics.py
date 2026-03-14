@@ -104,6 +104,7 @@ def boundary_wrap_diagnostics(
         }
 
     avg_similarity = sum(similarities) / len(similarities)
+    # Empirically tuned threshold for wrap detection.
     wraps = avg_similarity >= 0.6
     if not wraps:
         orientation = 0
@@ -165,6 +166,7 @@ def compute_field_curvature(grid: Dict[Tuple, GridPoint], fields: List[str]) -> 
                 continue
             neighbor_mean = sum(neighbor_values) / len(neighbor_values)
             scale = max(abs(neighbor_mean), 1.0)
+            # Discrete Laplacian-style: curvature = |value - neighbor_mean| / scale.
             total_curvature += abs(my_value - neighbor_mean) / scale
             count += 1
         point.curvature = total_curvature / count if count else 0.0
@@ -183,6 +185,7 @@ def compute_forman_ricci(grid: Dict[Tuple, GridPoint]) -> None:
             neighbor = idx_to_point.get(neighbor_idx)
             if neighbor is None:
                 continue
+            # Forman-Ricci: 4 - deg(v) - deg(w) per edge (v,w).
             edge_curvatures.append(4.0 - degree - len(neighbor.neighbors))
         point.forman_ricci = (
             sum(edge_curvatures) / len(edge_curvatures) if edge_curvatures else 0.0
@@ -208,6 +211,7 @@ def classify_morse_points(grid: Dict[Tuple, GridPoint], fields: List[str]) -> No
                 neighbor_value = neighbor.field_values.get(field_name)
                 if neighbor_value is None:
                     continue
+                # Avoid floating-point equality issues when classifying critical points.
                 if neighbor_value > my_value + 1e-12:
                     above += 1
                 elif neighbor_value < my_value - 1e-12:
@@ -240,6 +244,7 @@ def compute_persistence(
         return []
 
     idx_to_point = {point.index: point for point in grid.values()}
+    # 0-dimensional persistent homology: track births during sublevel-set filtration, record persistence when components merge.
     parent: Dict[int, int] = {}
     rank: Dict[int, int] = {}
     comp_birth: Dict[int, float] = {}
@@ -273,6 +278,7 @@ def compute_persistence(
             if root_i == root_n:
                 continue
 
+            # Elder rule: older component absorbs younger; younger's birth-death gap is its persistence.
             if comp_birth[root_i] <= comp_birth[root_n]:
                 elder, younger = root_i, root_n
             else:
@@ -332,6 +338,7 @@ def compute_betti_numbers(grid: Dict[Tuple, GridPoint]) -> Tuple[int, int]:
     vertex_count = len(grid)
     edge_count = sum(len(point.neighbors) for point in grid.values()) // 2
     beta_0 = components
+    # Euler relation χ = V - E + β₀ ⟹ β₁ = E - V + β₀.
     beta_1 = max(0, edge_count - vertex_count + beta_0)
     return beta_0, beta_1
 
@@ -364,6 +371,7 @@ def compute_interaction_curvature(
                     next_two = neighbor.field_values.get(field_two)
                     if next_one is None or next_two is None:
                         continue
+                    # Normalized gradient dot-product: do the two fields increase/decrease together across edges?
                     grad_products.append((next_one - value_one) * (next_two - value_two))
 
             if len(grad_products) < 10:

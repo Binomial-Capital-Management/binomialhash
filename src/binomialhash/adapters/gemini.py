@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Sequence
 from ..tools.base import ToolSpec
 from .common import handle_tool_call
 
+# Gemini names: must start with letter/underscore, up to 64 chars total
 _GEMINI_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.:-]{0,63}$")
 
 
@@ -83,6 +84,7 @@ def _normalize_args(args: Any) -> Dict[str, Any]:
         return {}
     if isinstance(args, dict):
         return args
+    # Gemini SDK returns a protobuf MapComposite; dict() materialises it
     try:
         return dict(args)
     except (TypeError, ValueError):

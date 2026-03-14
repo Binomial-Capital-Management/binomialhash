@@ -71,10 +71,11 @@ def distribution_dataset(
         idx = min(int((v - lo_val) / bin_width), bins - 1) if bin_width > 0 else 0
         hist_counts[idx] += 1
 
-    # JB = n/6 * (S^2 + K^2/4), p-value ~ exp(-JB/2) under chi2(2)
+    # Jarque-Bera: JB = n/6*(S^2 + K^2/4); p-value ~ exp(-JB/2) under chi2(2).
     jb = n / 6.0 * (skewness ** 2 + kurtosis ** 2 / 4.0)
     normality_pvalue = round(math.exp(-jb / 2.0), 6)
 
+    # Empirically tuned skewness/kurtosis cutoffs for shape classification.
     if abs(skewness) < 0.5 and abs(kurtosis) < 1.0:
         shape = "normal"
     elif skewness > 1.0:
@@ -267,6 +268,7 @@ def vif_dataset(
         ys = [mat[r][i] for r in range(len(mat))]
         from ._helpers import ols_r2
         r2 = ols_r2(xs, ys)
+        # VIF = 1/(1-R^2); cap at 999 when near-perfect collinearity.
         vif = 1.0 / (1.0 - r2) if r2 < 1.0 - 1e-12 else 999.0
         results.append({
             "field": target_f,
@@ -324,7 +326,7 @@ def effective_dimension_dataset(
 
     pr = float(total ** 2 / (eigenvalues ** 2).sum()) if (eigenvalues ** 2).sum() > 1e-12 else 1.0
 
-    # MLE (Levina-Bickel): k-NN distance estimator
+    # Levina-Bickel MLE: k-NN distance estimator for intrinsic dimension.
     mle_dim = None
     if method in ("mle", "both"):
         k = min(policy.effective_dim_default_k, len(mat) - 1)

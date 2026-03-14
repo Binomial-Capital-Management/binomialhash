@@ -23,7 +23,7 @@ def export_excel_batch(
     """Return a dict with ``headers`` and ``values`` ready for Excel output."""
     if sort_by and sort_by in col_types:
         rows = sort_rows(rows, sort_by, col_types[sort_by], sort_desc)
-    rows = rows[: min(max_rows, 500)]
+    rows = rows[:max_rows]
     headers = list(select_columns) if select_columns else list(columns)
     values = [[r.get(c) for c in headers] for r in rows]
     return {

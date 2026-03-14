@@ -1,0 +1,95 @@
+site_name: BinomialHash
+site_description: Content-addressed, schema-aware structured data compaction for LLM tool outputs
+site_url: https://binomialsentry.ai/docs/
+repo_url: https://github.com/Binomial-Capital-Management/binomialhash
+repo_name: Binomial-Capital-Management/binomialhash
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 2
+            members_order: source
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_style: numpy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - Guides:
+      - Architecture: guides/architecture.md
+      - Provider Adapters: guides/provider-adapters.md
+      - Middleware: guides/middleware.md
+      - Statistical Analysis: guides/statistical-analysis.md
+      - Manifold Navigation: guides/manifold-navigation.md
+      - Exports: guides/exports.md
+      - Token Counting: guides/token-counting.md
+      - Async & Threading: guides/async-and-threading.md
+  - API Reference:
+      - Overview: reference/index.md
+      - Core: reference/core.md
+      - Context: reference/context.md
+      - Middleware: reference/middleware.md
+      - Schema: reference/schema.md
+      - Extract: reference/extract.md
+      - Predicates: reference/predicates.md
+      - Insights: reference/insights.md
+      - Tools: reference/tools.md
+      - Adapters: reference/adapters.md
+      - Exporters: reference/exporters.md
+      - Stats: reference/stats.md
+      - Manifold: reference/manifold.md
+      - Tokenizers: reference/tokenizers.md

@@ -76,6 +76,7 @@ def cluster_dataset(
         if k_val < 2:
             return 0.0
         scores = []
+        # Subsample 500 points to keep silhouette computation tractable.
         for i in range(min(n_pts, 500)):
             ci = labels[i]
             same = [j for j in range(n_pts) if labels[j] == ci and j != i]
@@ -87,6 +88,7 @@ def cluster_dataset(
                 others = [j for j in range(n_pts) if labels[j] == c]
                 if others:
                     b = min(b, np.mean([np.sqrt(np.sum((xn[i] - xn[j]) ** 2)) for j in others]))
+            # Silhouette: (b - a) / max(a, b); b = nearest other-cluster distance.
             s = (b - a) / max(a, b) if max(a, b) > 1e-12 else 0
             scores.append(s)
         return float(np.mean(scores)) if scores else 0.0
@@ -342,6 +344,7 @@ def graphical_model_dataset(
             if diag[i] > 1e-12 and diag[j] > 1e-12:
                 partial[i, j] = -precision[i, j] / (diag[i] * diag[j])
 
+    # Threshold ~ 2/sqrt(n) for partial correlation significance under null.
     threshold = 2.0 / math.sqrt(n)
     edges = []
     degree = [0] * p
@@ -479,6 +482,7 @@ def persistent_topology_dataset(
                     rank_t[ri] += 1
                 comps -= 1
         b0 = comps
+        # Euler: beta_1 = edges - vertices + components.
         b1 = n_edges - n + comps
         betti_trace.append({"threshold": round(thresh, 4), "b0": b0, "b1": max(b1, 0)})
 

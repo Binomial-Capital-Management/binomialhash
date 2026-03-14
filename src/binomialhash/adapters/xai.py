@@ -54,6 +54,7 @@ def get_xai_tools(
     strict:
         Passed through to the OpenAI adapter's strict-mode logic.
     """
+    # xAI is wire-compatible with OpenAI Responses API format
     return get_openai_tools(specs, strict=strict, format="responses")
 
 

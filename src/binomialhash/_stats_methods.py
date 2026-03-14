@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 class _StatsMethodsMixin:
     """All 39 statistical analysis methods.  Mixed into BinomialHash."""
 
+    # Template method: look up slot, run analysis, track output size, log timing.
     def _stat(self, name: str, key: str, fn) -> Dict[str, Any]:
         t0 = time.perf_counter()
         slot = self._get_slot(key)
